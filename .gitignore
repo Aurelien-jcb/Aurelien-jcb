@@ -8,3 +8,6 @@ next-env.d.ts
 *.tsbuildinfo
 .DS_Store
 .vercel
+
+# Hostinger : ne jamais committer le token
+hostinger/notion-config.php

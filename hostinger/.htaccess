@@ -1,0 +1,7 @@
+# Bloque l'accès direct au fichier de config s'il est laissé dans le webroot.
+<Files "notion-config.php">
+    Require all denied
+</Files>
+
+# Sécurité de base
+Options -Indexes

@@ -1,0 +1,125 @@
+<?php
+// Endpoint de réception du sondage encadreurs → écrit dans Notion.
+// Hébergement mutualisé Hostinger (PHP). Aucun build, aucun Node.
+
+header('Content-Type: application/json; charset=utf-8');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['error' => 'Méthode non autorisée']);
+    exit;
+}
+
+// --- Config ---
+// Recommandé : place notion-config.php UN niveau AU-DESSUS du webroot
+// (ex. /home/uXXXX/notion-config.php, hors de public_html) pour que le
+// token ne soit jamais accessible publiquement.
+$token = getenv('NOTION_TOKEN') ?: '';
+$databaseId = getenv('NOTION_DATABASE_ID') ?: '';
+
+$configPath = __DIR__ . '/../notion-config.php';
+if ((!$token || !$databaseId) && file_exists($configPath)) {
+    $cfg = require $configPath;
+    if (!$token) {
+        $token = $cfg['NOTION_TOKEN'] ?? '';
+    }
+    if (!$databaseId) {
+        $databaseId = $cfg['NOTION_DATABASE_ID'] ?? '';
+    }
+}
+if (!$databaseId) {
+    $databaseId = 'f096e056a9c6440e878915322eef8bd9';
+}
+if (!$token) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Config manquante : NOTION_TOKEN']);
+    exit;
+}
+
+// --- Corps de la requête ---
+$body = json_decode(file_get_contents('php://input'), true);
+if (!is_array($body)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'JSON invalide']);
+    exit;
+}
+
+// Les valeurs DOIVENT correspondre exactement aux options de la base Notion.
+$selectFields = [
+    'q1'            => 'Q1 Notation commande',
+    'q2_calcul'     => 'Q2 Calcul devis',
+    'q2_hesitation' => 'Q2 Hésitation client',
+    'q3_retrouver'  => 'Q3 Retrouver historique',
+    'q3_temps'      => 'Q3 Temps recherche',
+    'q5_prix'       => 'Q5 Prix /mois',
+];
+
+$title = isset($body['atelier']) ? trim((string) $body['atelier']) : '';
+if ($title === '') {
+    $title = 'Réponse anonyme — ' . date('d/m/Y');
+}
+
+$properties = [
+    'Atelier / Ville' => ['title' => [['text' => ['content' => mb_substr($title, 0, 200)]]]],
+];
+
+foreach ($selectFields as $field => $prop) {
+    if (!empty($body[$field]) && is_string($body[$field])) {
+        $properties[$prop] = ['select' => ['name' => $body[$field]]];
+    }
+}
+
+if (!empty($body['q4_galeres']) && is_array($body['q4_galeres'])) {
+    $opts = [];
+    foreach ($body['q4_galeres'] as $g) {
+        if (is_string($g) && $g !== '') {
+            $opts[] = ['name' => $g];
+        }
+    }
+    if ($opts) {
+        $properties['Q4 Galères'] = ['multi_select' => $opts];
+    }
+}
+
+if (!empty($body['q1_logiciel'])) {
+    $properties['Q1 Logiciel — lequel/manque'] = [
+        'rich_text' => [['text' => ['content' => mb_substr(trim((string) $body['q1_logiciel']), 0, 2000)]]],
+    ];
+}
+
+if (!empty($body['email'])) {
+    $properties['Email'] = ['email' => trim((string) $body['email'])];
+}
+
+$properties['Tenez-moi informé'] = ['checkbox' => !empty($body['optin'])];
+
+$payload = json_encode([
+    'parent'     => ['database_id' => $databaseId],
+    'properties' => $properties,
+], JSON_UNESCAPED_UNICODE);
+
+// --- Appel API Notion ---
+$ch = curl_init('https://api.notion.com/v1/pages');
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST           => true,
+    CURLOPT_POSTFIELDS     => $payload,
+    CURLOPT_HTTPHEADER     => [
+        'Authorization: Bearer ' . $token,
+        'Content-Type: application/json',
+        'Notion-Version: 2022-06-28',
+    ],
+    CURLOPT_TIMEOUT        => 15,
+]);
+$resp = curl_exec($ch);
+$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+if ($code < 200 || $code >= 300) {
+    error_log('Notion API error ' . $code . ': ' . $resp);
+    http_response_code(502);
+    echo json_encode(['error' => "Échec de l'enregistrement"]);
+    exit;
+}
+
+echo json_encode(['ok' => true]);
