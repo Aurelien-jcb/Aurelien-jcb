@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+// Scrape des ateliers d'encadrement via OpenStreetMap (API Overpass).
+// 100% GRATUIT — aucune clé, aucune carte bancaire.
+// Sortie : prospects-osm.csv (importable dans la base Notion "🎯 Prospects encadreurs").
+//
+// Usage :
+//   node scrape-osm.mjs                 # France entière (défaut)
+//   node scrape-osm.mjs FR BE CH        # plusieurs pays (codes ISO)
+//
+// Node 18+ requis (fetch natif). Aucune dépendance npm.
+//
+// Tags OSM ciblés :
+//   shop=frame            (boutique d'encadrement)
+//   craft=picture_framer  (artisan encadreur)
+
+import { writeFileSync } from "node:fs";
+
+const pays = process.argv.slice(2).length ? process.argv.slice(2) : ["FR"];
+const ENDPOINT = "https://overpass-api.de/api/interpreter";
+
+function requete(codePays) {
+  return `
+    [out:json][timeout:90];
+    area["ISO3166-1"="${codePays}"][admin_level=2]->.z;
+    (
+      nwr["shop"="frame"](area.z);
+      nwr["craft"="picture_framer"](area.z);
+    );
+    out center tags;
+  `;
+}
+
+const PAYS_LABEL = {
+  FR: "🇫🇷 France", BE: "🇧🇪 Belgique", CH: "🇨🇭 Suisse",
+  CA: "🇨🇦 Canada", LU: "🇱🇺 Luxembourg",
+};
+
+function csvCell(v) {
+  const s = (v ?? "").toString();
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+async function pourPays(codePays) {
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "data=" + encodeURIComponent(requete(codePays)),
+  });
+  if (!res.ok) {
+    console.error(`  ⚠️  Overpass ${res.status} pour ${codePays} : ${await res.text()}`);
+    return [];
+  }
+  const json = await res.json();
+  return (json.elements ?? []).map((el) => {
+    const t = el.tags ?? {};
+    const ville = t["addr:city"] || t["addr:town"] || t["addr:village"] || "";
+    const adresse = [
+      t["addr:housenumber"], t["addr:street"], t["addr:postcode"], ville,
+    ].filter(Boolean).join(" ");
+    const lat = el.lat ?? el.center?.lat;
+    const lon = el.lon ?? el.center?.lon;
+    return {
+      atelier: t.name || "(sans nom)",
+      ville,
+      pays: PAYS_LABEL[codePays] || codePays,
+      telephone: t.phone || t["contact:phone"] || "",
+      site: t.website || t["contact:website"] || "",
+      email: t.email || t["contact:email"] || "",
+      adresse,
+      maps: lat && lon ? `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=18/${lat}/${lon}` : "",
+    };
+  });
+}
+
+const run = async () => {
+  const seen = new Map();
+  for (const p of pays) {
+    process.stdout.write(`  Interrogation OSM pour ${p}…\n`);
+    const rows = await pourPays(p);
+    for (const r of rows) {
+      const key = (r.atelier + "|" + r.adresse).toLowerCase();
+      if (!seen.has(key)) seen.set(key, r);
+    }
+  }
+
+  const rows = [...seen.values()];
+  const header = [
+    "Atelier", "Ville", "Pays", "Téléphone", "Site web", "Email",
+    "Adresse", "Carte", "Statut",
+  ];
+  const csv = [
+    header.join(","),
+    ...rows.map((r) =>
+      [
+        r.atelier, r.ville, r.pays, r.telephone, r.site, r.email,
+        r.adresse, r.maps, "🔵 À contacter",
+      ].map(csvCell).join(",")
+    ),
+  ].join("\n");
+
+  writeFileSync("prospects-osm.csv", csv, "utf8");
+  const avecSite = rows.filter((r) => r.site).length;
+  const avecMail = rows.filter((r) => r.email).length;
+  console.log(`\n✅ ${rows.length} ateliers → prospects-osm.csv`);
+  console.log(`   ${avecSite} avec site web, ${avecMail} avec email, ` +
+    `${rows.filter((r) => r.telephone).length} avec téléphone.`);
+};
+
+run().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
