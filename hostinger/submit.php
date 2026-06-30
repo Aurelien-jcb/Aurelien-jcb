@@ -11,20 +11,22 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // --- Config ---
-// Recommandé : place notion-config.php UN niveau AU-DESSUS du webroot
-// (ex. /home/uXXXX/notion-config.php, hors de public_html) pour que le
-// token ne soit jamais accessible publiquement.
+// notion-config.php peut être :
+//   1. dans le MÊME dossier que ce fichier (protégé par le .htaccess fourni), OU
+//   2. un niveau au-dessus (idéal : hors de public_html).
+// Les variables d'environnement PHP, si définies, ont la priorité.
 $token = getenv('NOTION_TOKEN') ?: '';
 $databaseId = getenv('NOTION_DATABASE_ID') ?: '';
 
-$configPath = __DIR__ . '/../notion-config.php';
-if ((!$token || !$databaseId) && file_exists($configPath)) {
-    $cfg = require $configPath;
-    if (!$token) {
-        $token = $cfg['NOTION_TOKEN'] ?? '';
-    }
-    if (!$databaseId) {
-        $databaseId = $cfg['NOTION_DATABASE_ID'] ?? '';
+foreach ([__DIR__ . '/notion-config.php', __DIR__ . '/../notion-config.php'] as $configPath) {
+    if ((!$token || !$databaseId) && file_exists($configPath)) {
+        $cfg = require $configPath;
+        if (!$token) {
+            $token = $cfg['NOTION_TOKEN'] ?? '';
+        }
+        if (!$databaseId) {
+            $databaseId = $cfg['NOTION_DATABASE_ID'] ?? '';
+        }
     }
 }
 if (!$databaseId) {
