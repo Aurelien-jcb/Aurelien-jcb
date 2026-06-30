@@ -124,4 +124,66 @@ if ($code < 200 || $code >= 300) {
     exit;
 }
 
+// Réponse immédiate au visiteur, puis on envoie l'alerte en arrière-plan.
 echo json_encode(['ok' => true]);
+if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+}
+
+// --- Alerte (WhatsApp / Telegram) ---
+$cfg = $cfg ?? [];
+notifierNouvelleReponse($body, $cfg);
+
+function notifierNouvelleReponse(array $body, array $cfg): void
+{
+    $lignes = ['📥 Nouvelle réponse — sondage encadreurs'];
+    $atelier = trim((string) ($body['atelier'] ?? ''));
+    if ($atelier !== '') {
+        $lignes[] = '🏠 ' . $atelier;
+    }
+    if (!empty($body['q5_prix'])) {
+        $lignes[] = '💶 Prix : ' . $body['q5_prix'];
+    }
+    if (!empty($body['q1'])) {
+        $lignes[] = '📝 Notation : ' . $body['q1'];
+    }
+    if (!empty($body['q4_galeres']) && is_array($body['q4_galeres'])) {
+        $lignes[] = '⚠️ Galères : ' . implode(', ', $body['q4_galeres']);
+    }
+    if (!empty($body['email'])) {
+        $lignes[] = '✉️ ' . $body['email'] . (!empty($body['optin']) ? ' (veut un suivi)' : '');
+    }
+    $message = implode("\n", $lignes);
+
+    // WhatsApp via CallMeBot (gratuit) — https://www.callmebot.com/blog/free-api-whatsapp-messages/
+    $waPhone  = getenv('WHATSAPP_PHONE')  ?: ($cfg['WHATSAPP_PHONE']  ?? '');
+    $waApiKey = getenv('WHATSAPP_APIKEY') ?: ($cfg['WHATSAPP_APIKEY'] ?? '');
+    if ($waPhone && $waApiKey) {
+        $url = 'https://api.callmebot.com/whatsapp.php?phone=' . rawurlencode($waPhone)
+            . '&text=' . rawurlencode($message)
+            . '&apikey=' . rawurlencode($waApiKey);
+        envoyerGet($url);
+    }
+
+    // Telegram (gratuit, robuste) — bot via @BotFather + chat_id
+    $tgToken = getenv('TELEGRAM_BOT_TOKEN') ?: ($cfg['TELEGRAM_BOT_TOKEN'] ?? '');
+    $tgChat  = getenv('TELEGRAM_CHAT_ID')   ?: ($cfg['TELEGRAM_CHAT_ID']   ?? '');
+    if ($tgToken && $tgChat) {
+        $url = 'https://api.telegram.org/bot' . $tgToken . '/sendMessage?chat_id=' . rawurlencode($tgChat)
+            . '&text=' . rawurlencode($message);
+        envoyerGet($url);
+    }
+}
+
+function envoyerGet(string $url): void
+{
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 12,
+    ]);
+    if (curl_exec($ch) === false) {
+        error_log('Alerte échouée : ' . curl_error($ch));
+    }
+    curl_close($ch);
+}
