@@ -23,13 +23,24 @@ const ENDPOINTS = [
   "https://overpass.private.coffee/api/interpreter",
 ];
 
+// Bounding-box (S, W, N, E) par pays : bien plus léger que la résolution
+// d'une "area" nationale → évite les timeouts 504 côté Overpass.
+const BBOX = {
+  FR: [41.3, -5.2, 51.1, 9.6],   // France métropolitaine
+  BE: [49.5, 2.5, 51.5, 6.4],
+  CH: [45.8, 5.9, 47.8, 10.5],
+  LU: [49.4, 5.7, 50.2, 6.5],
+  CA: [45.0, -79.8, 53.0, -57.0], // Québec (francophone)
+};
+
 function requete(codePays) {
+  const bb = BBOX[codePays];
+  const zone = bb ? `(${bb.join(",")})` : "";
   return `
-    [out:json][timeout:90];
-    area["ISO3166-1"="${codePays}"][admin_level=2]->.z;
+    [out:json][timeout:120];
     (
-      nwr["shop"="frame"](area.z);
-      nwr["craft"="picture_framer"](area.z);
+      nwr["shop"="frame"]${zone};
+      nwr["craft"="picture_framer"]${zone};
     );
     out center tags;
   `;
@@ -45,35 +56,44 @@ function csvCell(v) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function pourPays(codePays) {
   const body = "data=" + encodeURIComponent(requete(codePays));
   let json = null;
 
-  for (const endpoint of ENDPOINTS) {
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Accept": "application/json",
-          // Overpass exige un User-Agent identifiable, sinon il renvoie 406.
-          "User-Agent": "atelier-encadrement-prospects/1.0 (script perso)",
-        },
-        body,
-      });
-      if (!res.ok) {
-        console.error(`  ⚠️  ${endpoint} → ${res.status}, on tente un autre miroir…`);
-        continue;
+  // 2 passes sur les miroirs : les 504 d'Overpass sont souvent passagers.
+  for (let pass = 1; pass <= 2 && !json; pass++) {
+    for (const endpoint of ENDPOINTS) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            // Overpass exige un User-Agent identifiable, sinon il renvoie 406.
+            "User-Agent": "atelier-encadrement-prospects/1.0 (script perso)",
+          },
+          body,
+        });
+        if (!res.ok) {
+          console.error(`  ⚠️  ${endpoint} → ${res.status}, miroir suivant…`);
+          continue;
+        }
+        json = await res.json();
+        break;
+      } catch (e) {
+        console.error(`  ⚠️  ${endpoint} injoignable (${e.message}), miroir suivant…`);
       }
-      json = await res.json();
-      break;
-    } catch (e) {
-      console.error(`  ⚠️  ${endpoint} injoignable (${e.message}), miroir suivant…`);
+    }
+    if (!json && pass === 1) {
+      console.error("  ⏳ Tous les miroirs occupés, nouvelle tentative dans 8 s…");
+      await sleep(8000);
     }
   }
 
   if (!json) {
-    console.error(`  ❌ Aucun miroir Overpass n'a répondu pour ${codePays}.`);
+    console.error(`  ❌ Aucun miroir Overpass n'a répondu pour ${codePays} (réessaie dans quelques minutes).`);
     return [];
   }
 
