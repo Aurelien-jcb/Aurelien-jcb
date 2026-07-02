@@ -31,6 +31,7 @@
     .done{text-align:center;padding:40px 20px}
     .done h2{font-size:1.4rem}
     .error{color:#b3261e;font-size:.9rem;margin-top:8px}
+    .card.manquant{border-color:#b3261e;box-shadow:0 0 0 1px #b3261e}
     .hidden{display:none}
   </style>
 </head>
@@ -114,11 +115,34 @@
       }
     });
 
+    var REQUIS = ["q1", "q2_calcul", "q2_hesitation", "q3_retrouver", "q3_temps", "q5_prix"];
+
     form.addEventListener("submit", function(e){
       e.preventDefault();
       var btn = document.getElementById("submit");
       var err = document.getElementById("error");
       err.classList.add("hidden");
+
+      // Validation : chaque question obligatoire doit avoir une réponse.
+      form.querySelectorAll(".card.manquant").forEach(function(c){ c.classList.remove("manquant"); });
+      var premierManquant = null;
+      REQUIS.forEach(function(name){
+        if (!form.querySelector('input[name="' + name + '"]:checked')) {
+          var champ = form.querySelector('input[name="' + name + '"]');
+          var carte = champ ? champ.closest(".card") : null;
+          if (carte) {
+            carte.classList.add("manquant");
+            if (!premierManquant) premierManquant = carte;
+          }
+        }
+      });
+      if (premierManquant) {
+        err.textContent = "Merci de répondre aux questions surlignées en rouge.";
+        err.classList.remove("hidden");
+        premierManquant.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
       btn.disabled = true; btn.textContent = "Envoi…";
 
       var data = { atelier:"", q1_logiciel:"", q4_galeres:[], email:"", optin:false };
@@ -144,6 +168,7 @@
         if (data.optin) document.getElementById("done-optin").classList.remove("hidden");
         window.scrollTo(0,0);
       }).catch(function(){
+        err.textContent = "Oups, l'envoi a échoué. Réessayez dans un instant.";
         err.classList.remove("hidden");
         btn.disabled = false; btn.textContent = "Envoyer mes réponses";
       });

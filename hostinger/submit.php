@@ -46,6 +46,20 @@ if (!is_array($body)) {
     exit;
 }
 
+// Garde-fou : refuse un envoi vide (les 6 questions à choix sont obligatoires).
+$reponduAuMoinsUne = false;
+foreach (['q1', 'q2_calcul', 'q2_hesitation', 'q3_retrouver', 'q3_temps', 'q5_prix'] as $f) {
+    if (!empty($body[$f])) {
+        $reponduAuMoinsUne = true;
+        break;
+    }
+}
+if (!$reponduAuMoinsUne) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Formulaire vide']);
+    exit;
+}
+
 // Les valeurs DOIVENT correspondre exactement aux options de la base Notion.
 $selectFields = [
     'q1'            => 'Q1 Notation commande',
