@@ -65,6 +65,10 @@ async function pourPays(codePays) {
   // 2 passes sur les miroirs : les 504 d'Overpass sont souvent passagers.
   for (let pass = 1; pass <= 2 && !json; pass++) {
     for (const endpoint of ENDPOINTS) {
+      const host = new URL(endpoint).host;
+      process.stdout.write(`  → interrogation de ${host} (jusqu'à 90 s)…\n`);
+      const ac = new AbortController();
+      const minuteur = setTimeout(() => ac.abort(), 90000);
       try {
         const res = await fetch(endpoint, {
           method: "POST",
@@ -75,15 +79,20 @@ async function pourPays(codePays) {
             "User-Agent": "atelier-encadrement-prospects/1.0 (script perso)",
           },
           body,
+          signal: ac.signal,
         });
         if (!res.ok) {
-          console.error(`  ⚠️  ${endpoint} → ${res.status}, miroir suivant…`);
+          console.error(`  ⚠️  ${host} → ${res.status}, miroir suivant…`);
           continue;
         }
+        process.stdout.write(`  ⬇️  réponse reçue de ${host}, lecture…\n`);
         json = await res.json();
         break;
       } catch (e) {
-        console.error(`  ⚠️  ${endpoint} injoignable (${e.message}), miroir suivant…`);
+        const cause = e.name === "AbortError" ? "trop lent (>90 s)" : e.message;
+        console.error(`  ⚠️  ${host} : ${cause}, miroir suivant…`);
+      } finally {
+        clearTimeout(minuteur);
       }
     }
     if (!json && pass === 1) {
