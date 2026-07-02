@@ -16,7 +16,12 @@
 import { writeFileSync } from "node:fs";
 
 const pays = process.argv.slice(2).length ? process.argv.slice(2) : ["FR"];
-const ENDPOINT = "https://overpass-api.de/api/interpreter";
+// Plusieurs miroirs Overpass : on essaie le suivant si l'un refuse/surcharge.
+const ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+];
 
 function requete(codePays) {
   return `
@@ -41,16 +46,37 @@ function csvCell(v) {
 }
 
 async function pourPays(codePays) {
-  const res = await fetch(ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "data=" + encodeURIComponent(requete(codePays)),
-  });
-  if (!res.ok) {
-    console.error(`  ⚠️  Overpass ${res.status} pour ${codePays} : ${await res.text()}`);
+  const body = "data=" + encodeURIComponent(requete(codePays));
+  let json = null;
+
+  for (const endpoint of ENDPOINTS) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json",
+          // Overpass exige un User-Agent identifiable, sinon il renvoie 406.
+          "User-Agent": "atelier-encadrement-prospects/1.0 (script perso)",
+        },
+        body,
+      });
+      if (!res.ok) {
+        console.error(`  ⚠️  ${endpoint} → ${res.status}, on tente un autre miroir…`);
+        continue;
+      }
+      json = await res.json();
+      break;
+    } catch (e) {
+      console.error(`  ⚠️  ${endpoint} injoignable (${e.message}), miroir suivant…`);
+    }
+  }
+
+  if (!json) {
+    console.error(`  ❌ Aucun miroir Overpass n'a répondu pour ${codePays}.`);
     return [];
   }
-  const json = await res.json();
+
   return (json.elements ?? []).map((el) => {
     const t = el.tags ?? {};
     const ville = t["addr:city"] || t["addr:town"] || t["addr:village"] || "";
