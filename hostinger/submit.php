@@ -138,6 +138,10 @@ if ($code < 200 || $code >= 300) {
     exit;
 }
 
+// Lien direct vers la fiche Notion créée (fallback : la base).
+$created = json_decode($resp, true);
+$pageUrl = $created['url'] ?? 'https://www.notion.so/f096e056a9c6440e878915322eef8bd9';
+
 // Réponse immédiate au visiteur, puis on envoie l'alerte en arrière-plan.
 echo json_encode(['ok' => true]);
 if (function_exists('fastcgi_finish_request')) {
@@ -146,27 +150,16 @@ if (function_exists('fastcgi_finish_request')) {
 
 // --- Alerte (WhatsApp / Telegram) ---
 $cfg = $cfg ?? [];
-notifierNouvelleReponse($body, $cfg);
+notifierNouvelleReponse($body, $cfg, $pageUrl);
 
-function notifierNouvelleReponse(array $body, array $cfg): void
+function notifierNouvelleReponse(array $body, array $cfg, string $pageUrl): void
 {
     $lignes = ['📥 Nouvelle réponse — sondage encadreurs'];
     $atelier = trim((string) ($body['atelier'] ?? ''));
     if ($atelier !== '') {
         $lignes[] = '🏠 ' . $atelier;
     }
-    if (!empty($body['q5_prix'])) {
-        $lignes[] = '💶 Prix : ' . $body['q5_prix'];
-    }
-    if (!empty($body['q1'])) {
-        $lignes[] = '📝 Notation : ' . $body['q1'];
-    }
-    if (!empty($body['q4_galeres']) && is_array($body['q4_galeres'])) {
-        $lignes[] = '⚠️ Galères : ' . implode(', ', $body['q4_galeres']);
-    }
-    if (!empty($body['email'])) {
-        $lignes[] = '✉️ ' . $body['email'] . (!empty($body['optin']) ? ' (veut un suivi)' : '');
-    }
+    $lignes[] = '👉 ' . $pageUrl;
     $message = implode("\n", $lignes);
 
     // WhatsApp via CallMeBot (gratuit) — https://www.callmebot.com/blog/free-api-whatsapp-messages/
