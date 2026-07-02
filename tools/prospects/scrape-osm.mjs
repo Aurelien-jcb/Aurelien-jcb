@@ -110,18 +110,19 @@ const run = async () => {
   }
 
   const rows = [...seen.values()];
-  const header = [
-    "Atelier", "Ville", "Pays", "Téléphone", "Site web", "Email",
-    "Adresse", "Carte", "Statut",
-  ];
+  // Colonnes alignées EXACTEMENT sur la base Notion "🎯 Prospects encadreurs".
+  // Le site web + l'adresse (utiles pour trouver l'email) vont dans "Notes".
+  const header = ["Atelier", "Ville", "Pays", "Téléphone", "Email", "Statut", "Notes"];
   const csv = [
     header.join(","),
-    ...rows.map((r) =>
-      [
-        r.atelier, r.ville, r.pays, r.telephone, r.site, r.email,
-        r.adresse, r.maps, "🔵 À contacter",
-      ].map(csvCell).join(",")
-    ),
+    ...rows.map((r) => {
+      const notes = [
+        r.site ? "Site : " + r.site : "",
+        r.adresse ? "Adr. : " + r.adresse : "",
+      ].filter(Boolean).join(" — ");
+      return [r.atelier, r.ville, r.pays, r.telephone, r.email, "🔵 À contacter", notes]
+        .map(csvCell).join(",");
+    }),
   ].join("\n");
 
   writeFileSync("prospects-osm.csv", csv, "utf8");
