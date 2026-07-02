@@ -96,6 +96,11 @@
     html += '</fieldset>';
 
     html += '<div class="card">'
+      + '<label class="field-label" for="libre">Un mot pour la fin ? <span class="hint">(facultatif)</span></label>'
+      + '<textarea id="libre" placeholder="Une galère qu\'on n\'a pas évoquée, une idée, un besoin, un coup de gueule… tout m\'intéresse."></textarea>'
+      + '</div>';
+
+    html += '<div class="card">'
       + '<label class="field-label" for="atelier">Nom de votre atelier et ville <span class="hint">(facultatif)</span></label>'
       + '<input id="atelier" type="text" placeholder="Ex. Atelier Martin — Lille">'
       + '<label class="field-label" for="email" style="margin-top:16px">Email <span class="hint">(seulement si vous voulez un suivi)</span></label>'
@@ -145,13 +150,14 @@
 
       btn.disabled = true; btn.textContent = "Envoi…";
 
-      var data = { atelier:"", q1_logiciel:"", q4_galeres:[], email:"", optin:false };
+      var data = { atelier:"", q1_logiciel:"", q4_galeres:[], libre:"", email:"", optin:false };
       RADIO_QUESTIONS.forEach(function(rq){
         var sel = form.querySelector('input[name="' + rq.name + '"]:checked');
         if (sel) data[rq.name] = sel.value;
       });
       form.querySelectorAll('input[name="galere"]:checked').forEach(function(c){ data.q4_galeres.push(c.value); });
       data.q1_logiciel = document.getElementById("q1_logiciel").value;
+      data.libre = document.getElementById("libre").value;
       data.atelier = document.getElementById("atelier").value;
       data.email = document.getElementById("email").value;
       data.optin = document.getElementById("optin").checked;

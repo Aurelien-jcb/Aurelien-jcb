@@ -103,6 +103,12 @@ if (!empty($body['q1_logiciel'])) {
     ];
 }
 
+if (!empty($body['libre'])) {
+    $properties['Tribune libre'] = [
+        'rich_text' => [['text' => ['content' => mb_substr(trim((string) $body['libre']), 0, 2000)]]],
+    ];
+}
+
 if (!empty($body['email'])) {
     $properties['Email'] = ['email' => trim((string) $body['email'])];
 }
